@@ -49,34 +49,11 @@ class QueryRunner
         if (empty($query->getTable())) {
             throw new InvalidArgumentException('INSERT query requires a table.');
         }
-        $validationEnabled = $query->isValidationEnabled();
+        list($rows, $fields, $isMultiRow) = $this->prepareInsertPayload($query, $data);
+        $query->fields($fields)->valuesCount(count($rows));
+        $this->database->runPlainQuery((string) $query, PdoParameterBuilder::buildInsertParams($rows));
 
-        $isMultiRow = $this->isSequentialListOfArrays($data);
-
-        if ($isMultiRow) {
-            $rows = $data;
-            $existingFields = $query->getFields();
-            $fields = !empty($existingFields) ? $existingFields : array_keys($rows[0]);
-            if ($validationEnabled && !empty($existingFields)) {
-                $rows = $this->normalizeInsertRowsToFields($rows, $fields);
-            }
-            $query->fields($fields)->valuesCount(count($rows));
-            $this->database->runPlainQuery((string) $query, PdoParameterBuilder::buildInsertParams($rows));
-            return 0;
-        }
-
-        // Single row
-        if ($validationEnabled && empty($data)) {
-            throw new InvalidArgumentException('INSERT operation requires non-empty row data.');
-        }
-        $existingFields = $query->getFields();
-        $fields = !empty($existingFields) ? $existingFields : array_keys($data);
-        if ($validationEnabled && !empty($existingFields)) {
-            $this->assertInsertRowMatchesFields($data, $this->normalizeIdentifiers($fields));
-        }
-        $query->fields($fields)->valuesCount(1);
-        $this->database->runPlainQuery((string) $query, PdoParameterBuilder::buildInsertParams(array($data)));
-        return $this->database->getLastInsertId();
+        return $isMultiRow ? 0 : $this->database->getLastInsertId();
     }
 
     /**
@@ -96,14 +73,15 @@ class QueryRunner
 
         // Derive the key set used to split $data into SET/WHERE.
         $fieldKeys = $validationEnabled ? $this->normalizeIdentifiers($fields) : $fields;
+        $fieldLookup = array_flip($fieldKeys);
 
-        $fieldsToUpdate = array_intersect_key($data, array_flip($fieldKeys));
+        $fieldsToUpdate = array_intersect_key($data, $fieldLookup);
         if ($validationEnabled && empty($fieldsToUpdate)) {
             throw new InvalidArgumentException(
                 'UPDATE operation: no data bindings match the specified fields.'
             );
         }
-        $whereData = array_diff_key($data, array_flip($fieldKeys));
+        $whereData = array_diff_key($data, $fieldLookup);
 
         $placeholders = PdoParameterBuilder::buildNamedParams($fieldsToUpdate);
         $placeholders = array_merge(
@@ -191,6 +169,47 @@ class QueryRunner
     }
 
     /**
+     * @param Query $query
+     * @param array $data
+     * @return array
+     */
+    private function prepareInsertPayload(Query $query, array $data)
+    {
+        $validationEnabled = $query->isValidationEnabled();
+        $isMultiRow = $this->isSequentialListOfArrays($data);
+        if (!$isMultiRow && $validationEnabled && empty($data)) {
+            throw new InvalidArgumentException('INSERT operation requires non-empty row data.');
+        }
+
+        $rows = $isMultiRow ? array_values($data) : array($data);
+        $fields = $this->resolveInsertFields($query->getFields(), $rows);
+
+        if ($validationEnabled && !empty($query->getFields())) {
+            if ($isMultiRow) {
+                $rows = $this->normalizeInsertRowsToFields($rows, $fields);
+            } else {
+                $rows[0] = $this->normalizeInsertRowAgainstFields($rows[0], $fields);
+            }
+        }
+
+        return array($rows, $fields, $isMultiRow);
+    }
+
+    /**
+     * @param array $fields
+     * @param array $rows
+     * @return array
+     */
+    private function resolveInsertFields(array $fields, array $rows)
+    {
+        if (!empty($fields)) {
+            return $fields;
+        }
+
+        return array_keys($rows[0]);
+    }
+
+    /**
      * Re-keys each row to the raw field names declared in the query so
      * validation and parameter binding use a consistent key set.
      *
@@ -214,6 +233,19 @@ class QueryRunner
         }
 
         return $normalizedRows;
+    }
+
+    /**
+     * @param array $row
+     * @param array $fields
+     * @return array
+     */
+    private function normalizeInsertRowAgainstFields(array $row, array $fields)
+    {
+        $normalizedFields = $this->normalizeIdentifiers($fields);
+        $this->assertInsertRowMatchesFields($row, $normalizedFields);
+
+        return $this->normalizeInsertRowToFields($row, $fields, $normalizedFields, 0);
     }
 
     /**

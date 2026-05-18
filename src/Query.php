@@ -132,13 +132,7 @@ class Query
      */
     public function __call($name, $args)
     {
-        $method = strtolower($name);
-        if (in_array($method, self::SUPPORTED_FACTORY_METHODS, true)) {
-            return call_user_func_array(array($this, '_' . $method), $args);
-        }
-        throw new BadMethodCallException(
-            "Method '{$name}' does not exist in " . get_class($this) . '.'
-        );
+        return $this->dispatchFactoryMethod($name, $args);
     }
 
     /**
@@ -152,14 +146,8 @@ class Query
      */
     public static function __callStatic($name, $args)
     {
-        $method = strtolower($name);
-        if (in_array($method, self::SUPPORTED_FACTORY_METHODS, true)) {
-            $instance = new static();
-            return call_user_func_array(array($instance, '_' . $method), $args);
-        }
-        throw new BadMethodCallException(
-            "Static method '{$name}' does not exist in " . get_called_class() . '.'
-        );
+        $instance = new static();
+        return $instance->dispatchFactoryMethod($name, $args, true);
     }
 
     /**
@@ -179,7 +167,7 @@ class Query
     private function _select($fields = array())
     {
         $this->data['method'] = 'SELECT';
-        $this->query = null;
+        $this->invalidateQuery();
 
         if ($fields === array() || $fields === null) {
             $this->data['fields'] = array('*');
@@ -223,7 +211,7 @@ class Query
     {
         $this->data['method'] = 'INSERT';
         $this->data['table'] = $table;
-        $this->query = null;
+        $this->invalidateQuery();
         if (!empty($fields)) {
             $this->data['fields'] = self::normalizeOptionalFields($fields, 'insert()');
         }
@@ -249,7 +237,7 @@ class Query
     {
         $this->data['method'] = 'UPDATE';
         $this->data['table'] = $table;
-        $this->query = null;
+        $this->invalidateQuery();
         if (!empty($fields)) {
             $this->data['fields'] = self::normalizeOptionalFields($fields, 'update()');
         }
@@ -269,8 +257,7 @@ class Query
     {
         $this->data['method'] = 'DELETE';
         $this->data['table'] = $table;
-        $this->query = null;
-        return $this;
+        return $this->invalidateQuery();
     }
 
     /**
@@ -339,9 +326,7 @@ class Query
      */
     public function from($table)
     {
-        $this->data['table'] = $table;
-        $this->query = null;
-        return $this;
+        return $this->setDataValue('table', $table);
     }
 
     /**
@@ -403,8 +388,7 @@ class Query
         }
 
         $this->data['fields'] = $fields;
-        $this->query = null;
-        return $this;
+        return $this->invalidateQuery();
     }
 
     /**
@@ -419,9 +403,7 @@ class Query
      */
     public function where($where)
     {
-        $this->data['where'] = $where;
-        $this->query = null;
-        return $this;
+        return $this->setDataValue('where', $where);
     }
 
     /**
@@ -449,8 +431,7 @@ class Query
             $this->data['joins'] = [$this->data['joins']];
         }
         $this->data['joins'][] = $join;
-        $this->query = null;
-        return $this;
+        return $this->invalidateQuery();
     }
 
     /**
@@ -557,8 +538,7 @@ class Query
                 'joins() expects an array of JOIN expressions, a JOIN string, or null.'
             );
         }
-        $this->query = null;
-        return $this;
+        return $this->invalidateQuery();
     }
 
     /**
@@ -573,9 +553,7 @@ class Query
      */
     public function groupBy($groupBy)
     {
-        $this->data['group_by'] = $groupBy;
-        $this->query = null;
-        return $this;
+        return $this->setDataValue('group_by', $groupBy);
     }
 
     /**
@@ -590,9 +568,7 @@ class Query
      */
     public function having($having)
     {
-        $this->data['having'] = $having;
-        $this->query = null;
-        return $this;
+        return $this->setDataValue('having', $having);
     }
 
     /**
@@ -604,9 +580,7 @@ class Query
      */
     public function orderBy($orderBy)
     {
-        $this->data['order_by'] = $orderBy;
-        $this->query = null;
-        return $this;
+        return $this->setDataValue('order_by', $orderBy);
     }
 
     /**
@@ -618,14 +592,7 @@ class Query
      */
     public function limit($limit)
     {
-        if (filter_var($limit, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false) {
-            throw new InvalidArgumentException(
-                'limit() expects a non-negative integer.'
-            );
-        }
-        $this->data['limit'] = (int) $limit;
-        $this->query = null;
-        return $this;
+        return $this->setValidatedIntegerOption('limit', $limit, 0, 'limit() expects a non-negative integer.');
     }
 
     /**
@@ -637,14 +604,7 @@ class Query
      */
     public function offset($offset)
     {
-        if (filter_var($offset, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false) {
-            throw new InvalidArgumentException(
-                'offset() expects a non-negative integer.'
-            );
-        }
-        $this->data['offset'] = (int) $offset;
-        $this->query = null;
-        return $this;
+        return $this->setValidatedIntegerOption('offset', $offset, 0, 'offset() expects a non-negative integer.');
     }
 
     /**
@@ -657,14 +617,12 @@ class Query
      */
     public function valuesCount($count)
     {
-        if (filter_var($count, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
-            throw new InvalidArgumentException(
-                'valuesCount() expects a positive integer (>= 1).'
-            );
-        }
-        $this->data['values_to_insert'] = (int) $count;
-        $this->query = null;
-        return $this;
+        return $this->setValidatedIntegerOption(
+            'values_to_insert',
+            $count,
+            1,
+            'valuesCount() expects a positive integer (>= 1).'
+        );
     }
 
     /**
@@ -679,8 +637,7 @@ class Query
             return $this;
         }
         $this->dialect = $dialect;
-        $this->query = null;
-        return $this;
+        return $this->invalidateQuery();
     }
 
     /**
@@ -814,51 +771,16 @@ class Query
             $this->queryRunner = new QueryRunner($this->database);
         }
 
-        $restoreDatabaseValidation = false;
-        $previousDatabaseValidationState = false;
-        if (!$this->isValidationEnabled()) {
-            $previousDatabaseValidationState = $this->database->isValidationEnabled();
-            if ($previousDatabaseValidationState) {
-                $this->database->validation(false);
-                $restoreDatabaseValidation = true;
-            }
-        }
+        $restoreDatabaseValidation = $this->disableDatabaseValidationIfNeeded();
 
         try {
-            switch ($method) {
-                case 'SELECT':
-                    $result = $this->queryRunner->runSelect($this, $data);
-                    break;
-
-                case 'INSERT':
-                    $result = $this->queryRunner->runInsert($this, $data);
-                    break;
-
-                case 'UPDATE':
-                    $result = $this->queryRunner->runUpdate($this, $data);
-                    break;
-
-                case 'DELETE':
-                    $result = $this->queryRunner->runDelete($this, $data);
-                    break;
-
-                default:
-                    throw new InvalidArgumentException(
-                        "run() does not support query method '{$this->data['method']}'."
-                    );
-            }
+            $result = $this->runWithQueryRunner($method, $data);
         } catch (Exception $e) {
-            if ($restoreDatabaseValidation) {
-                $this->database->validation($previousDatabaseValidationState);
-            }
-
+            $this->restoreDatabaseValidation($restoreDatabaseValidation);
             throw $e;
         }
 
-        if ($restoreDatabaseValidation) {
-            $this->database->validation($previousDatabaseValidationState);
-        }
-
+        $this->restoreDatabaseValidation($restoreDatabaseValidation);
         return $result;
     }
 
@@ -915,12 +837,7 @@ class Query
         $limit = $this->getValidatedLimit();
         $limitVal = $limit > 0 ? $limit : null;
 
-        $offsetRaw = filter_var(
-            isset($this->data['offset']) ? $this->data['offset'] : null,
-            FILTER_VALIDATE_INT,
-            array('options' => array('min_range' => 0))
-        );
-        $offsetVal = $offsetRaw !== false ? (int) $offsetRaw : null;
+        $offsetVal = $this->getValidatedIntegerOption('offset', 0);
 
         $fields    = isset($this->data['fields']) ? $this->renderSelectFields($this->data['fields']) : "*";
         $selectTop = $this->dialect->compileSelectTop($limitVal, $offsetVal);
@@ -1058,6 +975,34 @@ class Query
     }
 
     /**
+     * @param string $name
+     * @param array  $args
+     * @param bool   $staticCall
+     * @return $this
+     */
+    private function dispatchFactoryMethod($name, array $args, $staticCall = false)
+    {
+        $method = strtolower($name);
+        if (!self::isFactoryMethod($method)) {
+            $message = $staticCall
+                ? "Static method '{$name}' does not exist in " . get_called_class() . '.'
+                : "Method '{$name}' does not exist in " . get_class($this) . '.';
+            throw new BadMethodCallException($message);
+        }
+
+        return call_user_func_array(array($this, '_' . $method), $args);
+    }
+
+    /**
+     * @param string $method
+     * @return bool
+     */
+    private static function isFactoryMethod($method)
+    {
+        return in_array($method, self::$supportedFactoryMethods, true);
+    }
+
+    /**
      * Returns the table expression from data, throwing if it is missing or not valid.
      * See SqlValidator::assertAlias() for the exact accepted table-expression syntax.
      * @throws InvalidArgumentException
@@ -1150,9 +1095,8 @@ class Query
      */
     private function getValidatedLimit()
     {
-        $raw = isset($this->data['limit']) ? $this->data['limit'] : null;
-        $limit = filter_var($raw, FILTER_VALIDATE_INT, array('options' => array('min_range' => 0)));
-        return ($limit !== false && $limit > 0) ? (int) $limit : 0;
+        $limit = $this->getValidatedIntegerOption('limit', 0);
+        return ($limit !== null && $limit > 0) ? $limit : 0;
     }
 
     /**
@@ -1233,5 +1177,109 @@ class Query
             return $fields;
         }
         throw new InvalidArgumentException("{$context} expects \$fields to be an array or string.");
+    }
+
+    /**
+     * @param string $key
+     * @param mixed  $value
+     * @return $this
+     */
+    private function setDataValue($key, $value)
+    {
+        $this->data[$key] = $value;
+        return $this->invalidateQuery();
+    }
+
+    /**
+     * @return $this
+     */
+    private function invalidateQuery()
+    {
+        $this->query = null;
+        return $this;
+    }
+
+    /**
+     * @param string $key
+     * @param mixed  $value
+     * @param int    $minValue
+     * @param string $message
+     * @return $this
+     */
+    private function setValidatedIntegerOption($key, $value, $minValue, $message)
+    {
+        $validated = filter_var(
+            $value,
+            FILTER_VALIDATE_INT,
+            array('options' => array('min_range' => $minValue))
+        );
+        if ($validated === false) {
+            throw new InvalidArgumentException($message);
+        }
+
+        $this->data[$key] = (int) $validated;
+        return $this->invalidateQuery();
+    }
+
+    /**
+     * @param string $key
+     * @param int    $minValue
+     * @return int|null
+     */
+    private function getValidatedIntegerOption($key, $minValue)
+    {
+        $value = filter_var(
+            isset($this->data[$key]) ? $this->data[$key] : null,
+            FILTER_VALIDATE_INT,
+            array('options' => array('min_range' => $minValue))
+        );
+
+        return $value === false ? null : (int) $value;
+    }
+
+    /**
+     * @return bool
+     */
+    private function disableDatabaseValidationIfNeeded()
+    {
+        if ($this->isValidationEnabled() || !$this->database->isValidationEnabled()) {
+            return false;
+        }
+
+        $this->database->validation(false);
+        return true;
+    }
+
+    /**
+     * @param bool $restore
+     */
+    private function restoreDatabaseValidation($restore)
+    {
+        if ($restore) {
+            $this->database->validation(true);
+        }
+    }
+
+    /**
+     * @param string $method
+     * @param array  $data
+     * @return array|string|int
+     */
+    private function runWithQueryRunner($method, array $data)
+    {
+        switch ($method) {
+            case 'SELECT':
+                return $this->queryRunner->runSelect($this, $data);
+            case 'INSERT':
+                return $this->queryRunner->runInsert($this, $data);
+            case 'UPDATE':
+                return $this->queryRunner->runUpdate($this, $data);
+            case 'DELETE':
+                return $this->queryRunner->runDelete($this, $data);
+        }
+
+        throw new InvalidArgumentException(
+            "run() does not support query method '{$this->data['method']}'."
+        );
     }
 }
