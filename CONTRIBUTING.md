@@ -37,6 +37,9 @@ php tests/run.php
 
 - **`tests/QueryTests.php`** – unit tests for the `Query` SQL builder.
 - **`tests/DatabaseTest.php`** – integration tests for the `Database` PDO wrapper (uses SQLite by default).
+- **`tests/SqlValidatorTests.php`** – unit tests for SQL identifier/expression validation.
+- **`tests/SqlDialectTests.php`** – unit tests for dialect quoting/pagination behavior.
+- **`tests/QueryRunTests.php`** – focused integration tests for `Query::run()` execution flow.
 
 The runner exits with code `0` when every test passes and `1` when any test fails.
 
