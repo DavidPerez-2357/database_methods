@@ -856,6 +856,29 @@ class DatabaseTest
     }
 
     // =========================================================================
+    // Tests - validation
+    // =========================================================================
+
+    public function testValidationEnabledByDefault()
+    {
+        assert_true($this->db->isValidationEnabled());
+    }
+
+    public function testValidationIsChainable()
+    {
+        $result = $this->db->validation(false);
+        assert_true($result === $this->db, 'validation() must return $this for chaining.');
+        $this->db->validation(true);
+    }
+
+    public function testValidationWithNonBooleanThrows()
+    {
+        assert_throws('InvalidArgumentException', function () {
+            $this->db->validation('no');
+        });
+    }
+
+    // =========================================================================
     // Tests - getLastInsertId
     // =========================================================================
 

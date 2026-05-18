@@ -168,6 +168,19 @@ class QueryTests
     // Factory: select()
     // =========================================================================
 
+    public function testFactoryMethodsAreCaseInsensitiveOnStaticCalls()
+    {
+        $sql = Query::Select(array('id'))->from('users')->getQuery();
+        assert_equals('SELECT id FROM users', $sql);
+    }
+
+    public function testFactoryMethodsAreCaseInsensitiveOnInstanceCalls()
+    {
+        $query = new Query();
+        $sql = $query->SeLeCt(array('id'))->from('users')->getQuery();
+        assert_equals('SELECT id FROM users', $sql);
+    }
+
     public function testSelectWithNoArgsDefaultsToWildcard()
     {
         $sql = Query::select()->from('users')->getQuery();

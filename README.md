@@ -45,9 +45,10 @@ Connect once, then select, insert, update, delete, count, and run transactions w
 ```php
 $db = new Mysql(['serverName' => 'localhost', 'username' => 'root', 'password' => '', 'DB' => 'mydb']);
 
-$users  = $db->select($query, ['active' => 1]);
+$query = Query::select(['id', 'name'])->from('users')->where('active = :active');
+$users = $db->select($query, ['active' => 1]);
 $lastId = $db->insert('users', ['name' => 'Alice', 'email' => 'alice@example.com']);
-$rows   = $db->update('users', ['name' => 'Bob'], 'id = :id', ['id' => $lastId]);
+$rows = $db->update('users', ['name' => 'Bob'], 'id = :id', ['id' => $lastId]);
 
 $db->executeTransaction(function($db) {
     $db->delete('orders', 'user_id = :id', ['id' => 5]);
@@ -56,6 +57,32 @@ $db->executeTransaction(function($db) {
 ```
 
 [Full Database documentation →](docs/Database.md)
+
+---
+
+### Fluent query execution
+
+`Database::createQuery()` returns a linked `Query`. Chain the query type, setters, and call `run()` to execute:
+
+```php
+// Retrieve rows
+$rows = $db->createQuery()
+    ->select(['id', 'name'])
+    ->from('users')
+    ->where('active = :active')
+    ->run(['active' => 1]);
+```
+
+Use the same pattern to write data — `run()` returns the last-insert ID for single-row inserts:
+
+```php
+// Insert a row
+$id = $db->createQuery()
+    ->insert('users', ['name', 'email'])
+    ->run(['name' => 'Alice', 'email' => 'alice@example.com']);
+```
+
+[Full documentation →](docs/query-database-integration.md)
 
 ---
 

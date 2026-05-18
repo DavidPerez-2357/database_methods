@@ -106,6 +106,28 @@ $database->enableKeywordCkeck(true); // re-enable when done
 
 &emsp;
 
+## Validation mode
+
+`Database` validation is enabled by default.
+
+Use `validation(false)` to disable Database-side validation checks, and `validation(true)` to enable them again:
+
+```php
+$database->validation(false);
+// ... execute performance-sensitive operations
+$database->validation(true);
+```
+
+`validation()` is chainable and throws `InvalidArgumentException` when the argument is not a boolean.
+
+Use `isValidationEnabled()` to inspect the current state.
+
+> [!NOTE]
+> When a query is executed through `createQuery()->...->validation(false)->run(...)`,
+> Database validation is disabled only for that run call and then automatically restored.
+
+&emsp;
+
 ## Methods
 
 ### `runPlainQuery($query, $data = [])`
@@ -163,14 +185,15 @@ $row  = $database->selectOne('SELECT id, name FROM users WHERE id = :userId LIMI
 
 ### `createQuery()` / `getDialect()`
 
-`createQuery()` returns a `Query::select()` instance pre-configured with the active driver dialect, so pagination SQL is rendered correctly per driver.
+`createQuery()` returns a blank `Query` linked to this connection and pre-configured with the driver dialect. Call the method type, chain setters, then call `run()` to execute, or pass the object to `select()` / `selectOne()`.
 
 ```php
-$query = $database->createQuery()
+$rows = $database->createQuery()
+    ->select(['id', 'name'])
     ->from('users')
     ->orderBy('created_at DESC')
     ->limit(10)
-    ->offset(5);
+    ->run();
 ```
 
 Use `getDialect()` when you need to apply the same dialect manually to an existing `Query` object.

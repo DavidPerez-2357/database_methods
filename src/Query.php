@@ -33,9 +33,17 @@
  */
 class Query
 {
+    private static $supportedFactoryMethods = array('select', 'insert', 'update', 'delete');
+
     private $data;
     private $query;
     private $dialect;
+    /** @var Database|null */
+    private $database;
+    /** @var QueryRunner|null */
+    private $queryRunner;
+    /** @var bool */
+    private $validationEnabled;
 
     /**
      * Creates a Query instance.
@@ -55,6 +63,9 @@ class Query
         }
 
         $this->dialect = new DefaultSqlDialect();
+        $this->database = null;
+        $this->queryRunner = null;
+        $this->validationEnabled = true;
         $this->data = $queryData;
         if (!empty($queryData)) {
             $this->query = $this->buildQuery();
@@ -100,58 +111,103 @@ class Query
     }
 
     // -------------------------------------------------------------------------
-    // Static factory methods
+    // Factory methods - callable both as Query::select() (static) and $query->select() (instance)
     // -------------------------------------------------------------------------
 
     /**
-     * Creates a SELECT Query for the given fields.
+     * Dispatches instance calls to `select()`, `insert()`, `update()`, or `delete()`.
+     *
+     * This magic method allows the factory methods to be called on an existing Query
+     * instance (e.g. one returned by `Database::createQuery()`) so that the database
+     * link and dialect are preserved:
+     *
+     * ```php
+     * $rows = $db->createQuery()->select(['id', 'name'])->from('users')->run();
+     * ```
+     *
+     * @param string $name Method name ('select', 'insert', 'update', or 'delete').
+     * @param array  $args Arguments forwarded to the private implementation.
+     * @return $this
+     * @throws BadMethodCallException If $name is not one of the four supported methods.
+     */
+    public function __call($name, $args)
+    {
+        $method = strtolower($name);
+        if (in_array($method, self::SUPPORTED_FACTORY_METHODS, true)) {
+            return call_user_func_array(array($this, '_' . $method), $args);
+        }
+        throw new BadMethodCallException(
+            "Method '{$name}' does not exist in " . get_class($this) . '.'
+        );
+    }
+
+    /**
+     * Forwards static calls (`Query::select()`, `Query::insert()`, etc.) to a fresh
+     * instance so the fluent factory pattern continues to work.
+     *
+     * @param string $name Method name ('select', 'insert', 'update', or 'delete').
+     * @param array  $args Arguments forwarded to the instance method.
+     * @return static
+     * @throws BadMethodCallException If $name is not one of the four supported methods.
+     */
+    public static function __callStatic($name, $args)
+    {
+        $method = strtolower($name);
+        if (in_array($method, self::SUPPORTED_FACTORY_METHODS, true)) {
+            $instance = new static();
+            return call_user_func_array(array($instance, '_' . $method), $args);
+        }
+        throw new BadMethodCallException(
+            "Static method '{$name}' does not exist in " . get_called_class() . '.'
+        );
+    }
+
+    /**
+     * Sets this query to SELECT and (optionally) specifies the column list.
+     *
+     * Called via `Query::select()` (static) or `$query->select()` (instance) through
+     * the `__callStatic` / `__call` magic methods.
      *
      * @param array|string|null $fields Column list. When omitted, null, or an empty array,
      *                                  defaults to ['*']. A string is normalized to a
      *                                  single-element array. An empty/whitespace-only string
      *                                  throws InvalidArgumentException.
-     * @return static
+     * @return $this
      * @throws InvalidArgumentException If $fields is an empty/whitespace-only string, or
      *                                  not an array, string, or null.
-     * @example
-     * ```php
-     * $query = Query::select(['id', 'name'])->from('users')->where('active = 1');
-     * $query = Query::select('id')->from('users');
-     * ```
      */
-    public static function select($fields = [])
+    private function _select($fields = array())
     {
-        $instance = new static();
-        $instance->data['method'] = 'SELECT';
+        $this->data['method'] = 'SELECT';
+        $this->query = null;
 
-        if ($fields === [] || $fields === null) {
-            $instance->data['fields'] = ['*'];
+        if ($fields === array() || $fields === null) {
+            $this->data['fields'] = array('*');
         } elseif (is_string($fields)) {
             if (trim($fields) === '') {
                 throw new InvalidArgumentException(
-                    'Query::select() expects $fields to be a non-empty string, '
-                    . 'an array (empty defaults to [\'*\']), or omitted.'
+                    'select() expects $fields to be a non-empty string, '
+                    . 'an array (empty defaults to ["*"]), or omitted.'
                 );
             }
-            $instance->data['fields'] = [$fields];
+            $this->data['fields'] = array($fields);
         } elseif (is_array($fields)) {
             // Delegate to fields() so per-element validation runs consistently.
-            $instance->fields($fields);
+            $this->fields($fields);
         } else {
             throw new InvalidArgumentException(
-                'Query::select() expects $fields to be an array, string, or empty.'
+                'select() expects $fields to be an array, string, or empty.'
             );
         }
 
-        return $instance;
+        return $this;
     }
 
     /**
-     * Creates an INSERT Query for the given table and fields.
+     * Sets this query to INSERT for the given table and optional column list.
      *
-     * `$fields` is optional here; you can also call `->fields([...])` in the chain.
-     * The `fields` must be provided (either here or via `->fields()`) before the
-     * query string is generated.
+     * `$fields` can also be set later with `->fields([...])`.
+     * The column list must be provided before the query string is generated.
      *
      * `$table` must be a plain or schema-qualified identifier (`'users'`, `'public.users'`).
      * Table aliases are not valid in INSERT statements and will cause an
@@ -160,32 +216,25 @@ class Query
      * @param string       $table  Target table name (plain or schema-qualified; no alias).
      * @param array|string $fields Columns to insert (optional; can be set later with ->fields()).
      *                             A string is normalized to a single-element array.
-     * @return static
+     * @return $this
      * @throws InvalidArgumentException If $fields is not an array or string.
-     * @example
-     * ```php
-     * $query = Query::insert('users', ['name', 'email'])->valuesCount(3);
-     * // or
-     * $query = Query::insert('users')->fields(['name', 'email'])->valuesCount(3);
-     * ```
      */
-    public static function insert($table, $fields = [])
+    private function _insert($table, $fields = array())
     {
-        $instance = new static();
-        $instance->data['method'] = 'INSERT';
-        $instance->data['table'] = $table;
+        $this->data['method'] = 'INSERT';
+        $this->data['table'] = $table;
+        $this->query = null;
         if (!empty($fields)) {
-            $instance->data['fields'] = self::normalizeOptionalFields($fields, 'Query::insert()');
+            $this->data['fields'] = self::normalizeOptionalFields($fields, 'insert()');
         }
-        return $instance;
+        return $this;
     }
 
     /**
-     * Creates an UPDATE Query for the given table and fields.
+     * Sets this query to UPDATE for the given table and optional column list.
      *
-     * `$fields` is optional here; you can also call `->fields([...])` in the chain.
-     * The `fields` must be provided (either here or via `->fields()`) before the
-     * query string is generated.
+     * `$fields` can also be set later with `->fields([...])`.
+     * The column list must be provided before the query string is generated.
      *
      * `$table` accepts plain, schema-qualified, or aliased forms:
      * `'users'`, `'public.users'`, `'users u'`, `'users AS u'`, `'public.users AS u'`.
@@ -193,45 +242,35 @@ class Query
      * @param string       $table  Target table expression (plain, schema-qualified, or with alias).
      * @param array|string $fields Columns to update (optional; can be set later with ->fields()).
      *                             A string is normalized to a single-element array.
-     * @return static
+     * @return $this
      * @throws InvalidArgumentException If $fields is not an array or string.
-     * @example
-     * ```php
-     * $query = Query::update('users', ['name', 'email'])->where('id = :id');
-     * // or
-     * $query = Query::update('users')->fields(['name', 'email'])->where('id = :id');
-     * ```
      */
-    public static function update($table, $fields = [])
+    private function _update($table, $fields = array())
     {
-        $instance = new static();
-        $instance->data['method'] = 'UPDATE';
-        $instance->data['table'] = $table;
+        $this->data['method'] = 'UPDATE';
+        $this->data['table'] = $table;
+        $this->query = null;
         if (!empty($fields)) {
-            $instance->data['fields'] = self::normalizeOptionalFields($fields, 'Query::update()');
+            $this->data['fields'] = self::normalizeOptionalFields($fields, 'update()');
         }
-        return $instance;
+        return $this;
     }
 
     /**
-     * Creates a DELETE Query for the given table.
+     * Sets this query to DELETE for the given table.
      *
      * `$table` accepts plain, schema-qualified, or aliased forms:
      * `'users'`, `'public.users'`, `'users u'`, `'users AS u'`, `'public.users AS u'`.
      *
      * @param string $table Target table expression (plain, schema-qualified, or with alias).
-     * @return static
-     * @example
-     * ```php
-     * $query = Query::delete('users')->where('id = :id')->limit(10);
-     * ```
+     * @return $this
      */
-    public static function delete($table)
+    private function _delete($table)
     {
-        $instance = new static();
-        $instance->data['method'] = 'DELETE';
-        $instance->data['table'] = $table;
-        return $instance;
+        $this->data['method'] = 'DELETE';
+        $this->data['table'] = $table;
+        $this->query = null;
+        return $this;
     }
 
     /**
@@ -247,7 +286,7 @@ class Query
      *                                  or if $dialect is not a SqlDialect instance (when non-null).
      * @example
      * ```php
-     * // ANSI double-quotes (default — PostgreSQL, SQLite, SQL Server)
+     * // ANSI double-quotes (default - PostgreSQL, SQLite, SQL Server)
      * Query::quote('order')                        // => '"order"'
      *
      * // MySQL backticks
@@ -642,6 +681,185 @@ class Query
         $this->dialect = $dialect;
         $this->query = null;
         return $this;
+    }
+
+    /**
+     * Links this query to a Database instance so that `run()` can execute it directly.
+     *
+     * `Database::createQuery()` calls this automatically. You only need to call it
+     * manually when constructing a Query outside of a Database context and you want
+     * to execute it later with `run()`.
+     *
+     * @param Database $database The database instance to use for execution.
+     * @return $this
+     */
+    public function setDatabase(Database $database)
+    {
+        $this->database = $database;
+        // QueryRunner holds the Database instance in its constructor; clear cache when relinking.
+        $this->queryRunner = null;
+        $this->setDialect($database->getDialect());
+        return $this;
+    }
+
+    /**
+     * Enables/disables query validation and normalization behavior.
+     *
+     * This setting affects Query internals and QueryRunner execution behavior.
+     * Use `validation(false)` for a faster execution path in Query::run().
+     *
+     * @param bool $enabled true to keep validation enabled; false to disable it.
+     * @return $this
+     * @throws InvalidArgumentException If $enabled is not boolean.
+     */
+    public function validation($enabled = true)
+    {
+        if (!is_bool($enabled)) {
+            throw new InvalidArgumentException(
+                'validation() expects a boolean argument.'
+            );
+        }
+
+        $this->validationEnabled = $enabled;
+        return $this;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isValidationEnabled()
+    {
+        return $this->validationEnabled;
+    }
+
+    /**
+     * Returns the target table name set on this query, or null when not set.
+     *
+     * @return string|null
+     */
+    public function getTable()
+    {
+        return isset($this->data['table']) ? $this->data['table'] : null;
+    }
+
+    /**
+     * Returns the column list set on this query, or an empty array when not set.
+     *
+     * @return array
+     */
+    public function getFields()
+    {
+        return isset($this->data['fields']) ? $this->data['fields'] : array();
+    }
+
+    /**
+     * Executes this query against the linked Database and returns the result.
+     *
+     * The Query must have been linked to a Database via `setDatabase()` or by
+     * being obtained from `Database::createQuery()`.
+     *
+     * Return values by query type:
+     *  - SELECT  → array of rows (associative arrays), or JSON string in json_encode mode.
+     *  - INSERT  → int - the last inserted row ID (single row) or 0 for multi-row batches.
+     *  - UPDATE  → int - number of affected rows.
+     *  - DELETE  → int - number of affected rows.
+     *
+     * For UPDATE, `$data` must contain both the column values to SET and the WHERE
+     * bindings in one flat array. The Query's field list determines which keys belong
+     * to the SET clause; all remaining keys are treated as WHERE bindings. Field names
+     * that were quoted (e.g. `"order"`) must be passed as their unquoted form (e.g.
+     * `'order'`) in `$data`.
+     *
+     * For INSERT with multiple rows, pass an array of associative arrays:
+     * `[['name' => 'Alice'], ['name' => 'Bob']]`. The field list set on the Query (if
+     * any) is used to build the SQL; field names are derived from the first row's keys
+     * when not pre-set.
+     *
+     * @param array $data Bindings / row data for the query (optional for SELECT/DELETE).
+     * @return array|string|int Result rows for SELECT; last-insert-ID for INSERT;
+     *                          affected-row count for UPDATE/DELETE.
+     * @throws RuntimeException If the Query is not linked to a Database.
+     * @throws InvalidArgumentException If the query method is not set or unsupported.
+     * @example
+     * ```php
+     * // SELECT
+     * $rows = $db->createQuery()->select(['id', 'name'])->from('users')->run();
+     * $row  = $db->createQuery()->select(['id'])->from('users')->where('id = :id')->run([':id' => 1]);
+     *
+     * // INSERT
+     * $id = $db->createQuery()->insert('users', ['name', 'email'])->run(['name' => 'Alice', 'email' => 'a@b.com']);
+     *
+     * // UPDATE
+     * $n = $db->createQuery()->update('users', ['name'])->where('id = :id')->run(['name' => 'Bob', 'id' => 1]);
+     *
+     * // DELETE
+     * $n = $db->createQuery()->delete('users')->where('id = :id')->run(['id' => 5]);
+     * ```
+     */
+    public function run(array $data = array())
+    {
+        if ($this->database === null) {
+            throw new RuntimeException(
+                'Query::run() requires a linked Database. '
+                . 'Obtain this Query via Database::createQuery() or call setDatabase() first.'
+            );
+        }
+
+        if (empty($this->data['method'])) {
+            throw new InvalidArgumentException('Query method is required before calling run().');
+        }
+
+        $method = strtoupper($this->data['method']);
+        if ($this->queryRunner === null) {
+            $this->queryRunner = new QueryRunner($this->database);
+        }
+
+        $restoreDatabaseValidation = false;
+        $previousDatabaseValidationState = false;
+        if (!$this->isValidationEnabled()) {
+            $previousDatabaseValidationState = $this->database->isValidationEnabled();
+            if ($previousDatabaseValidationState) {
+                $this->database->validation(false);
+                $restoreDatabaseValidation = true;
+            }
+        }
+
+        try {
+            switch ($method) {
+                case 'SELECT':
+                    $result = $this->queryRunner->runSelect($this, $data);
+                    break;
+
+                case 'INSERT':
+                    $result = $this->queryRunner->runInsert($this, $data);
+                    break;
+
+                case 'UPDATE':
+                    $result = $this->queryRunner->runUpdate($this, $data);
+                    break;
+
+                case 'DELETE':
+                    $result = $this->queryRunner->runDelete($this, $data);
+                    break;
+
+                default:
+                    throw new InvalidArgumentException(
+                        "run() does not support query method '{$this->data['method']}'."
+                    );
+            }
+        } catch (Exception $e) {
+            if ($restoreDatabaseValidation) {
+                $this->database->validation($previousDatabaseValidationState);
+            }
+
+            throw $e;
+        }
+
+        if ($restoreDatabaseValidation) {
+            $this->database->validation($previousDatabaseValidationState);
+        }
+
+        return $result;
     }
 
     // -------------------------------------------------------------------------

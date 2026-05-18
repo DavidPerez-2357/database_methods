@@ -27,6 +27,7 @@ $__dm_base = __DIR__ . '/src/';
 require_once $__dm_base . 'SqlValidator.php';
 require_once $__dm_base . 'SqlDialect.php';
 require_once $__dm_base . 'Query.php';
+require_once $__dm_base . 'QueryRunner.php';
 require_once $__dm_base . 'PdoParameterBuilder.php';
 require_once $__dm_base . 'Database.php';
 require_once $__dm_base . 'drivers/Mysql.php';

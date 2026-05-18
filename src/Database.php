@@ -22,6 +22,7 @@ class Database
     private $conn; // connection variable
     private $json_encode = false; // Default value for json_encode
     private $keywordCheckEnabled = true; // Default value for keyword checking
+    private $validationEnabled = true; // Default value for validation checks
     private $dialect; // SQL dialect used for Query rendering
 
     /**
@@ -147,6 +148,37 @@ class Database
     }
 
     /**
+     * Enables or disables Database-level validation checks.
+     *
+     * Validation is enabled by default.
+     *
+     * @param bool $enabled True to enable validation, false to disable.
+     * @return $this
+     * @throws InvalidArgumentException If $enabled is not a boolean.
+     */
+    public function validation($enabled = true)
+    {
+        if (!is_bool($enabled)) {
+            throw new InvalidArgumentException(
+                'Database::validation() expects a boolean argument.'
+            );
+        }
+
+        $this->validationEnabled = $enabled;
+        return $this;
+    }
+
+    /**
+     * Returns whether Database-level validation checks are enabled.
+     *
+     * @return bool
+     */
+    public function isValidationEnabled()
+    {
+        return $this->validationEnabled;
+    }
+
+    /**
      * Returns the list of JOIN types supported by this driver.
      *
      * Each entry maps a human-readable join name to the SQL keyword.
@@ -161,13 +193,29 @@ class Database
     }
 
     /**
-     * Creates a SELECT Query instance configured with this database dialect.
+     * Creates a blank Query instance linked to this database.
+     *
+     * Call one of the fluent factory methods on the returned object to configure
+     * the query type, then chain additional setters and finally call `run()` to
+     * execute it:
+     *
+     * ```php
+     * $rows = $db->createQuery()->select(['id', 'name'])->from('users')->run();
+     * $id   = $db->createQuery()->insert('users', ['name'])->run(['name' => 'Alice']);
+     * $n    = $db->createQuery()->update('users', ['name'])->where('id = :id')->run(['name' => 'Bob', 'id' => 1]);
+     * $n    = $db->createQuery()->delete('users')->where('id = :id')->run(['id' => 5]);
+     * ```
+     *
+     * The returned Query is pre-configured with the driver's SQL dialect and holds
+     * a reference back to this Database, so `run()` executes through this connection.
      *
      * @return Query
      */
     public function createQuery()
     {
-        return Query::select()->setDialect($this->getDialect());
+        $query = new Query();
+        $query->setDatabase($this);
+        return $query;
     }
 
     /**
@@ -573,11 +621,50 @@ class Database
      */
     private function bindNamedParams($stmt, $params)
     {
+        if (!$this->validationEnabled) {
+            $seenPlaceholders = array();
+
+            foreach ($params as $key => $value) {
+                $placeholder = $this->normalizeFastPathPlaceholder($key);
+
+                if (isset($seenPlaceholders[$placeholder])) {
+                    throw new InvalidArgumentException(
+                        "Duplicate named placeholder '{$placeholder}' in Database fast validation path."
+                    );
+                }
+
+                $seenPlaceholders[$placeholder] = true;
+                $this->bindOneValue($stmt, $placeholder, $value);
+            }
+            return;
+        }
+
         $normalizedParams = PdoParameterBuilder::normalizeNamedBindings($params);
 
         foreach ($normalizedParams as $normalizedKey => $value) {
             $this->bindOneValue($stmt, $normalizedKey, $value);
         }
+    }
+
+    /**
+     * Normalizes a placeholder key for fast-path named binding when validation is disabled.
+     *
+     * @param mixed $placeholder
+     * @return mixed
+     */
+    private function normalizeFastPathPlaceholder($placeholder)
+    {
+        if (is_string($placeholder) && $placeholder !== '' && $placeholder[0] !== ':') {
+            $placeholder = ':' . $placeholder;
+        }
+
+        if (is_string($placeholder) && !preg_match('/^:[A-Za-z_][A-Za-z0-9_]*$/', $placeholder)) {
+            throw new InvalidArgumentException(
+                "Invalid named placeholder '{$placeholder}' in Database fast validation path."
+            );
+        }
+
+        return $placeholder;
     }
 
     /**
