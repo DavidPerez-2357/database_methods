@@ -622,8 +622,18 @@ class Database
     private function bindNamedParams($stmt, $params)
     {
         if (!$this->validationEnabled) {
+            $seenPlaceholders = array();
+
             foreach ($params as $key => $value) {
                 $placeholder = $this->normalizeFastPathPlaceholder($key);
+
+                if (isset($seenPlaceholders[$placeholder])) {
+                    throw new InvalidArgumentException(
+                        "Duplicate named placeholder '{$placeholder}' in Database fast validation path."
+                    );
+                }
+
+                $seenPlaceholders[$placeholder] = true;
                 $this->bindOneValue($stmt, $placeholder, $value);
             }
             return;
