@@ -740,8 +740,10 @@ class DatabaseTest
         $this->db->setJsonEncode(true);
         try {
             $result = $this->db->plainSelect('SELECT name, email FROM ' . self::TABLE);
-        } finally {
             $this->db->setJsonEncode(false);
+        } catch (Exception $e) {
+            $this->db->setJsonEncode(false);
+            throw $e;
         }
 
         assert_true(is_string($result), 'plainSelect() should return a JSON string when setJsonEncode(true).');
@@ -790,8 +792,10 @@ class DatabaseTest
         $this->db->setJsonEncode(true);
         try {
             $result = $this->db->select(Query::select(['name', 'email'])->from(self::TABLE));
-        } finally {
             $this->db->setJsonEncode(false);
+        } catch (Exception $e) {
+            $this->db->setJsonEncode(false);
+            throw $e;
         }
 
         assert_true(is_string($result), 'select() should return a JSON string when setJsonEncode(true).');
@@ -954,8 +958,10 @@ class DatabaseTest
             assert_equals(1, count($rows));
             assert_equals('Alice', $rows[0]['name']);
             assert_true($rows[0]['notes'] === null, 'NULL value must be stored as SQL NULL, not an empty string.');
-        } finally {
             $this->db->runPlainQuery($this->getNullableDropTableSql());
+        } catch (Exception $e) {
+            $this->db->runPlainQuery($this->getNullableDropTableSql());
+            throw $e;
         }
     }
 
@@ -971,8 +977,10 @@ class DatabaseTest
             assert_equals(2, count($rows));
             assert_equals('has notes', $rows[0]['notes']);
             assert_true($rows[1]['notes'] === null, 'NULL value in multi-row insert must be stored as SQL NULL.');
-        } finally {
             $this->db->runPlainQuery($this->getNullableDropTableSql());
+        } catch (Exception $e) {
+            $this->db->runPlainQuery($this->getNullableDropTableSql());
+            throw $e;
         }
     }
 
@@ -996,8 +1004,10 @@ class DatabaseTest
             );
             assert_equals(1, count($updated));
             assert_true($updated[0]['notes'] === null, 'Updating a column to null must store SQL NULL.');
-        } finally {
             $this->db->runPlainQuery($this->getNullableDropTableSql());
+        } catch (Exception $e) {
+            $this->db->runPlainQuery($this->getNullableDropTableSql());
+            throw $e;
         }
     }
 
