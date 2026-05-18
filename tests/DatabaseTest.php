@@ -738,10 +738,15 @@ class DatabaseTest
         $this->db->insert(self::TABLE, ['name' => 'Alice', 'email' => 'alice@example.com']);
 
         $this->db->setJsonEncode(true);
+        $caughtException = null;
         try {
             $result = $this->db->plainSelect('SELECT name, email FROM ' . self::TABLE);
-        } finally {
-            $this->db->setJsonEncode(false);
+        } catch (Exception $e) {
+            $caughtException = $e;
+        }
+        $this->db->setJsonEncode(false);
+        if ($caughtException !== null) {
+            throw $caughtException;
         }
 
         assert_true(is_string($result), 'plainSelect() should return a JSON string when setJsonEncode(true).');
@@ -788,10 +793,15 @@ class DatabaseTest
         $this->db->insert(self::TABLE, ['name' => 'Alice', 'email' => 'alice@example.com']);
 
         $this->db->setJsonEncode(true);
+        $caughtException = null;
         try {
             $result = $this->db->select(Query::select(['name', 'email'])->from(self::TABLE));
-        } finally {
-            $this->db->setJsonEncode(false);
+        } catch (Exception $e) {
+            $caughtException = $e;
+        }
+        $this->db->setJsonEncode(false);
+        if ($caughtException !== null) {
+            throw $caughtException;
         }
 
         assert_true(is_string($result), 'select() should return a JSON string when setJsonEncode(true).');
@@ -948,20 +958,26 @@ class DatabaseTest
     public function testInsertNullValueStoresNull()
     {
         $this->resetNullableTable();
+        $caughtException = null;
         try {
             $this->db->insert(self::NULLABLE_TABLE, ['name' => 'Alice', 'notes' => null]);
             $rows = $this->db->select('SELECT * FROM ' . self::NULLABLE_TABLE);
             assert_equals(1, count($rows));
             assert_equals('Alice', $rows[0]['name']);
             assert_true($rows[0]['notes'] === null, 'NULL value must be stored as SQL NULL, not an empty string.');
-        } finally {
-            $this->db->runPlainQuery($this->getNullableDropTableSql());
+        } catch (Exception $e) {
+            $caughtException = $e;
+        }
+        $this->db->runPlainQuery($this->getNullableDropTableSql());
+        if ($caughtException !== null) {
+            throw $caughtException;
         }
     }
 
     public function testInsertManyWithNullValueStoresNull()
     {
         $this->resetNullableTable();
+        $caughtException = null;
         try {
             $this->db->insert(self::NULLABLE_TABLE, [
                 ['name' => 'Alice', 'notes' => 'has notes'],
@@ -971,14 +987,19 @@ class DatabaseTest
             assert_equals(2, count($rows));
             assert_equals('has notes', $rows[0]['notes']);
             assert_true($rows[1]['notes'] === null, 'NULL value in multi-row insert must be stored as SQL NULL.');
-        } finally {
-            $this->db->runPlainQuery($this->getNullableDropTableSql());
+        } catch (Exception $e) {
+            $caughtException = $e;
+        }
+        $this->db->runPlainQuery($this->getNullableDropTableSql());
+        if ($caughtException !== null) {
+            throw $caughtException;
         }
     }
 
     public function testUpdateToNullValueStoresNull()
     {
         $this->resetNullableTable();
+        $caughtException = null;
         try {
             $this->db->insert(self::NULLABLE_TABLE, ['name' => 'Alice', 'notes' => 'original']);
             $rows = $this->db->select(
@@ -996,8 +1017,12 @@ class DatabaseTest
             );
             assert_equals(1, count($updated));
             assert_true($updated[0]['notes'] === null, 'Updating a column to null must store SQL NULL.');
-        } finally {
-            $this->db->runPlainQuery($this->getNullableDropTableSql());
+        } catch (Exception $e) {
+            $caughtException = $e;
+        }
+        $this->db->runPlainQuery($this->getNullableDropTableSql());
+        if ($caughtException !== null) {
+            throw $caughtException;
         }
     }
 

@@ -34,6 +34,9 @@ Never add Composer packages or any external library. The entire codebase must be
 - **`QueryTests.php`**: unit tests for `Query`.
 - **`DatabaseTest.php`**: integration tests for `Database` (uses SQLite in-memory).
 - **`PdoParameterBuilderTests.php`**: unit tests for `PdoParameterBuilder`.
+- **`SqlValidatorTests.php`**: unit tests for `SqlValidator`.
+- **`SqlDialectTests.php`**: unit tests for `SqlDialect`.
+- **`QueryRunTests.php`**: focused integration tests for `Query::run()` / `QueryRunner`.
 - The runner exits with code `0` on success and `1` on failure.
 - **Every new public method or behaviour change must be accompanied by a corresponding test.**
 - Do not use PHPUnit or any external testing framework.

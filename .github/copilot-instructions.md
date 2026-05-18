@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-DatabaseMethods is a lightweight PHP library that cuts database boilerplate down to its essentials. It provides three focused classes: `Query` (SQL builder), `Database` (PDO wrapper), and `PdoParameterBuilder` (named-parameter helper). All of them work without Composer or any external dependency.
+DatabaseMethods is a lightweight PHP library that cuts database boilerplate down to its essentials. Its public API centers on three focused classes: `Query` (SQL builder), `Database` (PDO wrapper), and `PdoParameterBuilder` (named-parameter helper), supported internally by `SqlValidator`, `SqlDialect`, and `QueryRunner`. Everything works without Composer or external dependencies.
 
 > Compatible with PHP **5.4** and above. Supports MySQL, PostgreSQL, SQLite, and SQL Server.
 
@@ -30,7 +30,7 @@ php tests/run.php
 
 Consult the following files for in-depth guidelines:
 
-- [instructions/code-quality.md](instructions/code-quality.md): Senior developer mindset, PHP version awareness, performance and security rules.
-- [instructions/architecture.md](instructions/architecture.md): Project structure, layered architecture, and key invariants for each class.
-- [instructions/conventions.md](instructions/conventions.md): Naming, PHP style, language rules, no external dependencies, and testing.
-- [instructions/workflow.md](instructions/workflow.md): Commit messages (gitmoji), pull request titles, and branch naming.
+- [.github/instructions/code-quality.md](.github/instructions/code-quality.md): Senior developer mindset, PHP version awareness, performance and security rules.
+- [.github/instructions/architecture.md](.github/instructions/architecture.md): Project structure, layered architecture, and key invariants for each class.
+- [.github/instructions/conventions.md](.github/instructions/conventions.md): Naming, PHP style, language rules, no external dependencies, and testing.
+- [.github/instructions/workflow.md](.github/instructions/workflow.md): Commit messages (gitmoji), pull request titles, and branch naming.
