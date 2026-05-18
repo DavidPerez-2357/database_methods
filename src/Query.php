@@ -33,7 +33,7 @@
  */
 class Query
 {
-    const SUPPORTED_FACTORY_METHODS = array('select', 'insert', 'update', 'delete');
+    private static $supportedFactoryMethods = array('select', 'insert', 'update', 'delete');
 
     private $data;
     private $query;
