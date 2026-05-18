@@ -827,27 +827,39 @@ class Query
         try {
             switch ($method) {
                 case 'SELECT':
-                    return $this->queryRunner->runSelect($this, $data);
+                    $result = $this->queryRunner->runSelect($this, $data);
+                    break;
 
                 case 'INSERT':
-                    return $this->queryRunner->runInsert($this, $data);
+                    $result = $this->queryRunner->runInsert($this, $data);
+                    break;
 
                 case 'UPDATE':
-                    return $this->queryRunner->runUpdate($this, $data);
+                    $result = $this->queryRunner->runUpdate($this, $data);
+                    break;
 
                 case 'DELETE':
-                    return $this->queryRunner->runDelete($this, $data);
+                    $result = $this->queryRunner->runDelete($this, $data);
+                    break;
 
                 default:
                     throw new InvalidArgumentException(
                         "run() does not support query method '{$this->data['method']}'."
                     );
             }
-        } finally {
+        } catch (Exception $e) {
             if ($restoreDatabaseValidation) {
                 $this->database->validation($previousDatabaseValidationState);
             }
+
+            throw $e;
         }
+
+        if ($restoreDatabaseValidation) {
+            $this->database->validation($previousDatabaseValidationState);
+        }
+
+        return $result;
     }
 
     // -------------------------------------------------------------------------
