@@ -33,8 +33,6 @@
  */
 class Query
 {
-    private static $supportedFactoryMethods = array('select', 'insert', 'update', 'delete');
-
     private $data;
     private $query;
     private $dialect;
@@ -999,7 +997,9 @@ class Query
      */
     private static function isFactoryMethod($method)
     {
-        return in_array($method, self::$supportedFactoryMethods, true);
+        static $supportedFactoryMethods = array('select', 'insert', 'update', 'delete');
+
+        return in_array($method, $supportedFactoryMethods, true);
     }
 
     /**

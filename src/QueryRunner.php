@@ -206,6 +206,10 @@ class QueryRunner
             return $fields;
         }
 
+        if (empty($rows)) {
+            throw new InvalidArgumentException('INSERT operation requires at least one row.');
+        }
+
         return array_keys($rows[0]);
     }
 
